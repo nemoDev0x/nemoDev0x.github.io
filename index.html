@@ -1,0 +1,34 @@
+---
+layout: default
+title: "nemoDev0x | Apuntes de Hacking"
+---
+{% assign featured = site.posts.first %}
+{% if featured %}
+<section class="hero">
+  <div class="hero-eyebrow">último post</div>
+  <div class="hero-date">{{ featured.date | date: "%d.%m.%Y" }}</div>
+  <h1 class="hero-title">{{ featured.title | replace: ' ', '<em> </em>' | truncatewords: 3, '' }}</h1>
+  {% if featured.description %}<p class="hero-desc">{{ featured.description }}</p>{% endif %}
+  <a href="{{ featured.url | relative_url }}" class="hero-btn">Leer ahora</a>
+</section>
+{% endif %}
+
+<section class="posts-section">
+  <div class="section-label">todos los posts</div>
+  <ul class="post-list">
+    {% for post in site.posts %}
+    <li class="post-item">
+      <div>
+        {% if post.categories[0] %}<div class="post-cat"><a href="{{ '/tags/#' | append: post.categories[0] | relative_url }}">{{ post.categories[0] }}</a></div>{% endif %}
+        <div class="post-title"><a href="{{ post.url | relative_url }}">{{ post.title }}</a></div>
+        {% if post.tags %}
+        <div class="post-tags">
+          {% for tag in post.tags limit:5 %}<a href="{{ '/tags/#' | append: tag | relative_url }}" class="tag">{{ tag }}</a>{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      <div class="post-date">{{ post.date | date: "%d.%m.%Y" }}</div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>

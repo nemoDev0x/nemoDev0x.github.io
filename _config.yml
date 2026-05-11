@@ -1,0 +1,25 @@
+title: "nemoDev0x"
+description: "Apuntes sobre hacking, pentesting y ciberseguridad"
+author: "nemoDev0x"
+url: "https://nemoDev0x.github.io"
+baseurl: ""
+
+markdown: kramdown
+highlighter: rouge
+permalink: /:title/
+
+plugins:
+  - jekyll-feed
+  - jekyll-sitemap
+
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+  syntax_highlighter_opts:
+    css_class: 'highlight'
+    block:
+      line_numbers: false
+
+exclude:
+  - Gemfile
+  - Gemfile.lock

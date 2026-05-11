@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% if page.title %}{{ page.title }} | {{ site.title }}{% else %}{{ site.title }}{% endif %}</title>
+  <meta name="description" content="{% if page.description %}{{ page.description }}{% else %}{{ site.description }}{% endif %}">
+  <meta name="theme-color" content="#0c0c10">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2212%22 fill=%22%237c3aed%22/><text y=%22.85em%22 font-size=%2272%22 x=%2214%22>n</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="{{ '/assets/css/main.css' | relative_url }}">
+  {% feed_meta %}
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="{{ '/' | relative_url }}" class="site-logo">
+      <span class="logo-dot"></span>
+      nemoDev0x
+    </a>
+    <nav class="site-nav">
+      <a href="{{ '/' | relative_url }}"{% if page.url == '/' %} class="active"{% endif %}>~/home</a>
+      <a href="{{ '/about' | relative_url }}"{% if page.url contains 'about' %} class="active"{% endif %}>~/about</a>
+      <a href="{{ '/tags' | relative_url }}"{% if page.url contains 'tags' %} class="active"{% endif %}>~/tags</a>
+      <a href="{{ '/contact' | relative_url }}"{% if page.url contains 'contact' %} class="active"{% endif %}>~/contact</a>
+    </nav>
+  </div>
+</header>
+
+<main>{{ content }}</main>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <span class="footer-copy">{{ site.title }} — {{ site.description }}</span>
+    <div class="footer-links">
+      <a href="https://github.com/nemoDev0x" target="_blank">GitHub</a>
+      <a href="{{ '/feed.xml' | relative_url }}">RSS</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
