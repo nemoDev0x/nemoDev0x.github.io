@@ -7,9 +7,9 @@ title: "nemoDev0x | Apuntes de Hacking"
 <section class="hero">
   <div class="hero-eyebrow">último post</div>
   <div class="hero-date">{{ featured.date | date: "%d.%m.%Y" }}</div>
-  <h1 class="hero-title">{{ featured.title | replace: ' ', '<em> </em>' | truncatewords: 3, '' }}</h1>
+  <h1 class="hero-title">{{ featured.title }}</h1>
   {% if featured.description %}<p class="hero-desc">{{ featured.description }}</p>{% endif %}
-  <a href="{{ featured.url | relative_url }}" class="hero-btn">Leer ahora</a>
+  <a href="{{ featured.url | relative_url }}" class="btn-read">Leer ahora →</a>
 </section>
 {% endif %}
 
@@ -19,7 +19,9 @@ title: "nemoDev0x | Apuntes de Hacking"
     {% for post in site.posts %}
     <li class="post-item">
       <div>
-        {% if post.categories[0] %}<div class="post-cat"><a href="{{ '/tags/#' | append: post.categories[0] | relative_url }}">{{ post.categories[0] }}</a></div>{% endif %}
+        {% if post.categories[0] %}
+        <div class="post-cat"><a href="{{ '/tags/#' | append: post.categories[0] | relative_url }}">{{ post.categories[0] }}</a></div>
+        {% endif %}
         <div class="post-title"><a href="{{ post.url | relative_url }}">{{ post.title }}</a></div>
         {% if post.tags %}
         <div class="post-tags">

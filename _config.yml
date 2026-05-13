@@ -4,11 +4,11 @@ author: "nemoDev0x"
 url: "https://nemoDev0x.github.io"
 baseurl: ""
 
+future: true
+
 markdown: kramdown
 highlighter: rouge
 permalink: /:title/
-
-future: true
 
 plugins:
   - jekyll-feed
