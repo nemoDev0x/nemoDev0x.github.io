@@ -13,18 +13,10 @@ permalink: /about/
   <div class="about-block" style="margin-top:2px">
     <h3>// skills</h3>
     <ul class="skill-grid">
-      <li>Pentesting Web</li>
-      <li>Network Hacking</li>
-      <li>Linux</li>
-      <li>Python</li>
-      <li>Metasploit</li>
-      <li>Burp Suite</li>
-      <li>Nmap</li>
-      <li>CTFs</li>
-      <li>OSINT</li>
-      <li>Active Directory</li>
-      <li>Privilege Escalation</li>
-      <li>Reverse Engineering</li>
+      <li>Pentesting Web</li><li>Network Hacking</li><li>Linux</li>
+      <li>Python</li><li>Metasploit</li><li>Burp Suite</li>
+      <li>Nmap</li><li>CTFs</li><li>OSINT</li>
+      <li>Active Directory</li><li>Privilege Escalation</li><li>Reverse Engineering</li>
     </ul>
   </div>
   <div class="about-block" style="margin-top:2px">
