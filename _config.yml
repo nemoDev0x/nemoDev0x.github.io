@@ -8,7 +8,7 @@ markdown: kramdown
 highlighter: rouge
 permalink: /:title/
 
-future:true
+future: true
 
 plugins:
   - jekyll-feed
