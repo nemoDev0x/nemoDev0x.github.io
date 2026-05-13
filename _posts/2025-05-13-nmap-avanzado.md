@@ -1,7 +1,7 @@
 ---
 layout: post
-title: "NMAP Avanzado — Guía Completa de Pentesting"
-date: 2025-05-13
+title: "Avanced NMAP"
+date: 2026-01-02
 categories: [ciberseguridad]
 tags: [nmap, pentesting, recon, enumeración, NSE, evasión, firewall, puertos, hacking]
 description: "Guía avanzada de Nmap: técnicas de evasión, scripts NSE, fingerprinting, automatización y flujos reales de pentesting."
