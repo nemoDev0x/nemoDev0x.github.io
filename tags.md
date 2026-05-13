@@ -10,8 +10,8 @@ permalink: /tags/
     {% for tag in all_tags %}{% if tag != "" %}<a href="#{{ tag }}" class="tag-item">{{ tag }}</a>{% endif %}{% endfor %}
   </div>
   {% for tag in all_tags %}{% if tag != "" %}
-  <div id="{{ tag }}" style="margin-top:2rem;padding-top:1rem;border-top:1px solid #1a1228">
-    <h2 style="font-size:0.7rem;color:#4a3a6b;letter-spacing:2px;text-transform:uppercase;margin-bottom:0.8rem">#{{ tag }}</h2>
+  <div id="{{ tag }}" style="margin-top:2.2rem;padding-top:1rem;border-top:1px solid #281d4a">
+    <p style="font-size:.65rem;color:#6b54a0;letter-spacing:2px;text-transform:uppercase;margin-bottom:.8rem">#{{ tag }}</p>
     <ul class="post-list">
       {% for post in site.posts %}{% if post.tags contains tag %}
       <li class="post-item">
