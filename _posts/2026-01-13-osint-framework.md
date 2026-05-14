@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Reconocimiento Pasivo con OSINT Framework"
-date: 2025-05-13
+date: 2026-01-13
 categories: [reconocimiento]
 tags: [osint, reconocimiento, recon, shodan, theHarvester, metadatos, subfinder, amass]
 description: "Guía profesional de reconocimiento pasivo: metodología, teoría y práctica real de las técnicas OSINT usadas en Red Team y Bug Bounty."
