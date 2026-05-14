@@ -693,12 +693,12 @@ curl -s "http://web.archive.org/cdx/search/cdx?url=ejemplo.com/*&output=text&fl=
 ## FRAMEWORK Y RECURSOS
 - **Google Hacking Database** — [exploit-db.com/google-hacking-database](https://www.exploit-db.com/google-hacking-database)
 - **Mapa De Herramientas OSINT** - [osintframework.com](https://osintframework.com)
-https://crt.sh              → Certificate Transparency logs
-https://shodan.io           → dispositivos expuestos en internet
-https://censys.io           → alternativa a Shodan, más enfocada a certs
-https://dehashed.com        → brechas de datos con passwords
-https://intelx.io           → paste sites + indexación dark web
-https://hunter.io           → emails corporativos verificados
-https://bgp.he.net          → ASN y rangos de IP por organización
-https://securitytrails.com  → historial DNS y subdominios
-https://viewdns.info        → múltiples herramientas DNS/IP
+- **Certificate Transparency logs** - [crt.sh](https://crt.sh) 
+- **Dispositivos Expuestos En Internet** - [shodan.io](https://shodan.io)
+- **Alternativa a Shodan, más enfocada a certs** - [censys.io](https://censys.io)
+- **Brechas De Datos Con Passwords** - [dehashed.com](https://dehashed.com)
+- **Paste Sites + Indexación Dark Web** - [intelx.io](https://intelx.io)  
+- **Emails Corporativos Verificados** - [hunter.io](https://hunter.io)  
+- **ASN y Rangos De IP Por Organización** - [bgp.he.net](https://bgp.he.net) 
+- **Historial DNS y Subdominios** - [securitytrails.com](https://securitytrails.com)
+- **Múltiples Herramientas DNS/IP** - [viewdns.info](https://viewdns.info)   
