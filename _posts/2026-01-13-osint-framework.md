@@ -687,15 +687,18 @@ echo "ejemplo.com" | waybackurls > wayback.txt         # URLs históricas
 gau ejemplo.com > all_urls.txt                         # Get All URLs
 curl -s "http://web.archive.org/cdx/search/cdx?url=ejemplo.com/*&output=text&fl=original&collapse=urlkey"
 
-# ── FRAMEWORK Y RECURSOS ────────────────────────────────────
-# https://osintframework.com  → mapa de herramientas OSINT
-# https://crt.sh              → Certificate Transparency logs
-# https://shodan.io           → dispositivos expuestos en internet
-# https://censys.io           → alternativa a Shodan, más enfocada a certs
-# https://dehashed.com        → brechas de datos con passwords
-# https://intelx.io           → paste sites + indexación dark web
-# https://hunter.io           → emails corporativos verificados
-# https://bgp.he.net          → ASN y rangos de IP por organización
-# https://securitytrails.com  → historial DNS y subdominios
-# https://viewdns.info        → múltiples herramientas DNS/IP
+
 ```
+
+## FRAMEWORK Y RECURSOS
+- **Google Hacking Database** — [exploit-db.com/google-hacking-database](https://www.exploit-db.com/google-hacking-database)
+- **Mapa De Herramientas OSINT** - [osintframework.com](https://osintframework.com)
+https://crt.sh              → Certificate Transparency logs
+https://shodan.io           → dispositivos expuestos en internet
+https://censys.io           → alternativa a Shodan, más enfocada a certs
+https://dehashed.com        → brechas de datos con passwords
+https://intelx.io           → paste sites + indexación dark web
+https://hunter.io           → emails corporativos verificados
+https://bgp.he.net          → ASN y rangos de IP por organización
+https://securitytrails.com  → historial DNS y subdominios
+https://viewdns.info        → múltiples herramientas DNS/IP
