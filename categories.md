@@ -5,7 +5,7 @@ permalink: /categories/
 ---
 <div class="page-content">
 
-  <h1 class="page-title">categorías</h1>
+  <h1 class="page-title">Categorías</h1>
 
   {% assign cat_list = site.posts | map: 'categories' | join: ',' | split: ',' | uniq | sort %}
 
