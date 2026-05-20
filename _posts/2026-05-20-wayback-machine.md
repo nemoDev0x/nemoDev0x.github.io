@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Wayback Machine y Caché — Encontrar Recursos Ocultos"
-date: 2025-05-19
+date: 2026-05-20
 categories: [reconocimiento]
 tags: [wayback-machine, cache, osint, reconocimiento, recon, urls, endpoints, google-cache, web-archive]
 description: "Guía profesional de reconocimiento con Wayback Machine y caché web: encontrar endpoints eliminados, credenciales expuestas, infraestructura antigua y recursos ocultos en el historial de internet."
