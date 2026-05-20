@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Metadata Extraction — Exiftool y FOCA"
-date: 2025-05-18
+date: 2026-02-01
 categories: [reconocimiento]
 tags: [exiftool, foca, metadatos, osint, reconocimiento, documentos, pdf, office, imagenes]
 description: "Guía profesional de extracción de metadatos con Exiftool y FOCA: qué revelan los documentos corporativos, cómo extraerlos, analizarlos y usarlos en reconocimiento de infraestructura y personas."
