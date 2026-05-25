@@ -1,0 +1,726 @@
+---
+layout: post
+title: "Masscan — Escaneo de Puertos a Alta Velocidad"
+date: 2026-05-25
+categories: [enumeración]
+tags: [masscan, escaneo, puertos, recon, enumeración, red-team, infraestructura, nmap]
+description: "Guía profesional de Masscan: instalación, configuración, técnicas de escaneo masivo, integración con Nmap y flujos reales para descubrimiento de infraestructura en pentesting y Red Team."
+---
+
+## Masscan — Cuando Nmap no es suficientemente rápido
+
+Nmap es la herramienta de escaneo de puertos más completa que existe, pero tiene una limitación práctica importante: la velocidad. Escanear todos los puertos de una red corporativa con rango /16 (65.536 IPs) con Nmap puede llevar horas o incluso días. En un engagement de Red Team con tiempo limitado, eso no es viable.
+
+Masscan resuelve este problema radicalmente. Fue creado por Robert Graham con un único objetivo: ser el escáner de puertos más rápido posible. En hardware moderno con buena conexión puede escanear todo el espacio IPv4 (4.000 millones de IPs) en menos de seis minutos. No es una exageración de marketing — es la velocidad real que alcanza a 10 millones de paquetes por segundo.
+
+La diferencia técnica fundamental entre Masscan y Nmap está en la arquitectura. Nmap gestiona cada conexión de forma secuencial o con paralelismo limitado, manteniendo estado para cada una. Masscan implementa su propia pila TCP/IP en espacio de usuario completamente asíncrona, sin mantener estado de conexión en el sentido tradicional. Envía paquetes SYN a la velocidad máxima que permite la red, y procesa las respuestas de forma independiente. Esta arquitectura sin estado es lo que permite la velocidad extrema.
+
+La contrapartida es que Masscan es menos preciso que Nmap. Puede tener falsos positivos y falsos negativos, especialmente a velocidades muy altas. Por eso el flujo profesional estándar combina los dos: **Masscan para descubrir qué puertos están abiertos** (rápido y a escala), **Nmap para analizar en detalle los puertos descubiertos** (preciso y completo). Cada herramienta hace lo que mejor sabe.
+
+---
+
+## 1. Instalación y configuración inicial
+
+### Instalación
+
+```bash
+# En Kali Linux y distribuciones basadas en Debian
+sudo apt update && sudo apt install masscan
+
+# Compilar desde el código fuente para tener la versión más reciente
+# Masscan requiere libpcap para capturar paquetes
+sudo apt install git gcc make libpcap-dev
+git clone https://github.com/robertdavidgraham/masscan
+cd masscan
+make
+sudo make install
+
+# Verificar la instalación
+masscan --version
+
+# En macOS con Homebrew
+brew install masscan
+```
+
+Masscan necesita privilegios de root para enviar paquetes raw. Casi todos sus usos requieren `sudo`:
+
+```bash
+# Verificar que funciona correctamente con un escaneo mínimo
+sudo masscan 93.184.216.34 -p80 --rate 100
+```
+
+### Configuración del sistema para alta velocidad
+
+Antes de usar Masscan a velocidades elevadas, hay ajustes del sistema operativo que mejoran el rendimiento y evitan problemas:
+
+```bash
+# Aumentar el límite de archivos abiertos — Masscan abre muchos sockets
+ulimit -n 1000000
+echo "* soft nofile 1000000" >> /etc/security/limits.conf
+echo "* hard nofile 1000000" >> /etc/security/limits.conf
+
+# Ajustar parámetros del kernel para alto rendimiento de red
+# Aumentar los buffers de recepción y envío
+sysctl -w net.core.rmem_max=134217728
+sysctl -w net.core.wmem_max=134217728
+sysctl -w net.core.netdev_max_backlog=250000
+
+# Persistir los cambios
+echo "net.core.rmem_max=134217728" >> /etc/sysctl.conf
+echo "net.core.wmem_max=134217728" >> /etc/sysctl.conf
+sysctl -p
+
+# Identificar la interfaz de red a usar (importante para Masscan)
+ip addr show
+# Anotar el nombre de la interfaz: eth0, ens3, wlan0...
+```
+
+---
+
+## 2. Sintaxis y uso básico
+
+La sintaxis de Masscan es deliberadamente similar a la de Nmap para reducir la curva de aprendizaje. Si sabes Nmap, en cinco minutos manejas Masscan.
+
+### Estructura básica de un comando
+
+```bash
+sudo masscan [OBJETIVO] -p[PUERTOS] --rate=[VELOCIDAD] [OPCIONES]
+
+# Componentes:
+# OBJETIVO:   IP, rango CIDR, o archivo con IPs
+# PUERTOS:    lista de puertos o rangos
+# VELOCIDAD:  paquetes por segundo (empezar conservador, aumentar gradualmente)
+# OPCIONES:   interfaz, output, exclusiones, etc.
+```
+
+### Primeros escaneos
+
+```bash
+# Escaneo de un puerto en una IP
+sudo masscan 93.184.216.34 -p80
+
+# Escanear los puertos web más comunes en una IP
+sudo masscan 93.184.216.34 -p80,443,8080,8443
+
+# Escanear un rango de puertos en una subred /24
+sudo masscan 192.168.1.0/24 -p1-1000 --rate=1000
+
+# Escanear todos los puertos (0-65535) en una IP
+sudo masscan 93.184.216.34 -p0-65535 --rate=10000
+
+# Atajo para todos los puertos
+sudo masscan 93.184.216.34 -p- --rate=10000
+```
+
+### Selección de objetivos
+
+```bash
+# Una sola IP
+sudo masscan 10.10.10.1 -p80
+
+# Rango CIDR — todos los hosts de una subred
+sudo masscan 10.10.10.0/24 -p80,443
+
+# Rango CIDR grande — red corporativa completa
+sudo masscan 10.0.0.0/8 -p22,80,443 --rate=10000
+
+# Múltiples rangos
+sudo masscan 10.10.10.0/24 192.168.1.0/24 -p80
+
+# Desde un archivo de texto (una IP o rango por línea)
+sudo masscan -iL objetivos.txt -p80,443 --rate=5000
+
+# Excluir IPs o rangos del escaneo
+# Muy importante en engagements reales para no escanear fuera de scope
+sudo masscan 10.0.0.0/8 -p80 --excludefile exclusiones.txt
+
+# Excluir una IP directamente en el comando
+sudo masscan 10.0.0.0/8 -p80 --exclude 10.10.10.1
+```
+
+### Selección de puertos
+
+```bash
+# Puerto único
+-p80
+
+# Lista de puertos separados por coma
+-p22,80,443,3306,3389
+
+# Rango de puertos
+-p1-1024
+
+# Todos los puertos
+-p0-65535
+# o simplemente:
+-p-
+
+# Puertos UDP (prefijo U:)
+-pU:53,161,500
+
+# Mezclar TCP y UDP
+-p80,443,U:53,U:161
+
+# Los 100 puertos más comunes (aproximación manual)
+-p21,22,23,25,53,80,110,111,135,139,143,443,445,993,995,1723,3306,3389,5900,8080
+```
+
+---
+
+## 3. Control de velocidad — el parámetro más crítico
+
+La velocidad (`--rate`) es el parámetro más importante de Masscan y el que más errores causa cuando se configura mal. Demasiado rápido y el objetivo puede caerse, los resultados serán poco fiables, y el proveedor de red puede cortar la conexión. Demasiado lento y pierde la ventaja sobre Nmap.
+
+### Guía de velocidades según el contexto
+
+```bash
+# VELOCIDAD MUY CONSERVADORA — pruebas en laboratorio o redes frágiles
+# 100-1000 paquetes/segundo — no perceptible en el objetivo
+sudo masscan 10.0.0.0/24 -p1-65535 --rate=500
+
+# VELOCIDAD ESTÁNDAR — entornos corporativos, engagements autorizados
+# 1000-10000 paquetes/segundo — balance entre velocidad y fiabilidad
+sudo masscan 10.0.0.0/24 -p1-65535 --rate=5000
+
+# VELOCIDAD ALTA — cuando necesitas velocidad y la red lo permite
+# 10000-100000 paquetes/segundo — puede causar alertas en IDS
+sudo masscan 10.0.0.0/16 -p80,443 --rate=50000
+
+# VELOCIDAD MÁXIMA — solo para rangos muy grandes en red controlada
+# 100000+ paquetes/segundo — puede causar disrupciones
+sudo masscan 10.0.0.0/8 -p80 --rate=1000000
+
+# REGLA PRÁCTICA:
+# Empezar con --rate=1000 y doblar hasta encontrar el límite
+# Si empiezan a aparecer falsos positivos o el objetivo deja de responder, bajar
+```
+
+### Cómo afecta la velocidad a la fiabilidad
+
+A velocidades muy altas, Masscan puede perder paquetes de respuesta porque su buffer de recepción se satura. Esto genera falsos negativos — puertos que están abiertos pero que Masscan no detecta porque perdió el SYN-ACK.
+
+```bash
+# Para reducir falsos negativos: reintentos
+# --retries indica cuántas veces reenviar cada SYN si no hay respuesta
+sudo masscan 10.0.0.0/24 -p1-65535 --rate=5000 --retries=2
+
+# Aumentar el tiempo de espera para recibir respuestas lentas
+# --wait es el tiempo en segundos que Masscan espera al final del escaneo
+# para recibir respuestas tardías (por defecto 10 segundos)
+sudo masscan 10.0.0.0/24 -p1-65535 --rate=5000 --wait=15
+```
+
+---
+
+## 4. Formatos de output
+
+Masscan soporta varios formatos de salida que determinan cómo procesamos los resultados después.
+
+### Guardar resultados
+
+```bash
+# Formato de texto simple — legible pero difícil de procesar
+sudo masscan 10.0.0.0/24 -p80,443 -oT resultados.txt
+
+# Formato XML — compatible con Nmap, importable en Metasploit y otras herramientas
+sudo masscan 10.0.0.0/24 -p80,443 -oX resultados.xml
+
+# Formato JSON — fácil de procesar con Python o jq
+sudo masscan 10.0.0.0/24 -p80,443 -oJ resultados.json
+
+# Formato binario de Masscan — más rápido para guardar, requiere conversión posterior
+sudo masscan 10.0.0.0/24 -p80,443 -oB resultados.bin
+# Convertir binario a cualquier otro formato
+masscan --readscan resultados.bin -oX resultados.xml
+
+# Guardar también el estado del escaneo para poder retomarlo
+# --resume-filename guarda el progreso
+sudo masscan 10.0.0.0/8 -p80 --rate=50000 --resume-filename estado_escaneo.conf
+
+# Si el escaneo se interrumpe, retomarlo desde donde quedó
+sudo masscan --resume estado_escaneo.conf
+```
+
+### Procesar resultados con herramientas estándar
+
+```bash
+# El formato de texto de Masscan tiene esta estructura:
+# Discovered open port 80/tcp on 10.10.10.1
+
+# Extraer solo las IPs con el puerto 80 abierto
+grep "80/tcp" resultados.txt | awk '{print $6}' | sort -u > ips_puerto_80.txt
+
+# Extraer pares IP:puerto para procesamiento posterior
+grep "open" resultados.txt | awk '{print $6":"$4}' | sed 's|/tcp||' | sort -u
+
+# Con el formato JSON usar jq
+cat resultados.json | jq -r '.[] | "\(.ip):\(.ports[0].port)"'
+
+# Contar cuántos puertos únicos están abiertos en total
+grep "open port" resultados.txt | awk '{print $5}' | sort -u | wc -l
+
+# Ver las IPs con más puertos abiertos (las más interesantes)
+grep "open port" resultados.txt | awk '{print $6}' | sort | uniq -c | sort -rn | head -20
+```
+
+---
+
+## 5. Archivos de configuración de Masscan
+
+Para escaneos complejos o que se repiten frecuentemente, es más cómodo usar un archivo de configuración que escribir todos los parámetros en la línea de comandos:
+
+```bash
+# Crear el archivo de configuración
+cat > masscan_config.conf << 'EOF'
+# Masscan configuration file
+# Ejemplo para escaneo de red corporativa
+
+# Objetivo
+range = 10.0.0.0/8
+
+# Puertos a escanear
+ports = 21,22,23,25,53,80,110,111,135,139,143,443,445,993,995,1723,3306,3389,5432,5900,8080,8443
+
+# Velocidad de escaneo
+rate = 10000
+
+# Reintentos por paquete
+retries = 2
+
+# Tiempo de espera al final
+wait = 15
+
+# Interfaz de red a usar
+# interface = eth0
+
+# Archivo de exclusiones (IPs/rangos fuera de scope)
+excludefile = exclusiones.txt
+
+# Archivo de salida XML
+output-format = xml
+output-filename = escaneo_red_corp.xml
+EOF
+
+# Ejecutar con el archivo de configuración
+sudo masscan -c masscan_config.conf
+```
+
+### Archivo de exclusiones
+
+En todo engagement real hay IPs o rangos que deben excluirse del escaneo porque están fuera de scope, son infraestructura crítica que no debe perturbarse, o son dispositivos frágiles:
+
+```bash
+# Crear archivo de exclusiones
+cat > exclusiones.txt << 'EOF'
+# Exclusiones del escaneo
+# Formato: una IP o rango CIDR por línea
+# Líneas que empiezan por # son comentarios
+
+# Infraestructura crítica — NO ESCANEAR
+10.10.10.1        # Gateway principal
+10.10.10.2        # Core switch
+10.10.10.10       # Servidor de producción crítico
+
+# Fuera de scope acordado con el cliente
+192.168.100.0/24  # Red de invitados (fuera de scope)
+10.20.0.0/16      # Filial X (no incluida en el engagement)
+
+# Dispositivos frágiles conocidos
+10.10.10.50       # PLC industrial (puede crashear con escaneo)
+10.10.10.51       # Sistema SCADA legacy
+EOF
+```
+
+---
+
+## 6. El flujo profesional: Masscan + Nmap
+
+Este es el flujo de trabajo estándar en pentesting profesional. Masscan hace el trabajo pesado de descubrir qué puertos están abiertos en toda la red, y Nmap hace el análisis detallado solo en los puertos y hosts que Masscan encontró.
+
+La combinación es más potente que usar cualquiera de las dos por separado: tienes la velocidad de Masscan y la precisión y riqueza de información de Nmap.
+
+### Flujo manual paso a paso
+
+```bash
+TARGET_RANGE="10.10.10.0/24"
+OUTPUT_DIR="./escaneo_$(date +%Y%m%d)"
+mkdir -p "$OUTPUT_DIR"
+
+# FASE 1: Masscan — descubrir puertos abiertos rápidamente
+echo "[1/3] Masscan: descubriendo puertos abiertos..."
+sudo masscan "$TARGET_RANGE" \
+    -p0-65535 \
+    --rate=10000 \
+    --retries=2 \
+    --wait=10 \
+    -oX "$OUTPUT_DIR/masscan_full.xml"
+
+echo "    Puertos encontrados: $(grep -c 'portid' $OUTPUT_DIR/masscan_full.xml)"
+
+# FASE 2: Extraer los datos del XML para preparar Nmap
+echo "[2/3] Procesando resultados de Masscan..."
+
+# Extraer IPs únicas con puertos abiertos
+python3 << 'PYEOF'
+import xml.etree.ElementTree as ET
+import sys
+
+tree = ET.parse("./escaneo_$(date +%Y%m%d)/masscan_full.xml")
+root = tree.getroot()
+
+# Construir diccionario: IP → lista de puertos
+hosts = {}
+for host in root.findall('host'):
+    ip = host.find('address').get('addr')
+    ports = []
+    for port in host.findall('.//port'):
+        if port.find('state').get('state') == 'open':
+            ports.append(port.get('portid'))
+    if ip and ports:
+        if ip not in hosts:
+            hosts[ip] = set()
+        hosts[ip].update(ports)
+
+# Guardar IPs con todos sus puertos
+with open("./escaneo_$(date +%Y%m%d)/hosts_ports.txt", "w") as f:
+    for ip, ports in sorted(hosts.items()):
+        f.write(f"{ip}:{','.join(sorted(ports, key=int))}\n")
+
+# Guardar solo las IPs para Nmap
+with open("./escaneo_$(date +%Y%m%d)/alive_hosts.txt", "w") as f:
+    for ip in sorted(hosts.keys()):
+        f.write(ip + "\n")
+
+print(f"Hosts activos: {len(hosts)}")
+print(f"Total puertos abiertos: {sum(len(p) for p in hosts.values())}")
+PYEOF
+
+# FASE 3: Nmap — análisis detallado en los hosts/puertos descubiertos
+echo "[3/3] Nmap: análisis detallado..."
+# Para cada host, escanear solo sus puertos abiertos
+while IFS=: read -r ip ports; do
+    echo "  Analizando $ip en puertos $ports"
+    sudo nmap -sCV -p "$ports" -Pn "$ip" \
+        -oA "$OUTPUT_DIR/nmap_${ip//\./_}" \
+        --open 2>/dev/null
+done < "$OUTPUT_DIR/hosts_ports.txt"
+
+echo "[+] Escaneo completo. Resultados en: $OUTPUT_DIR/"
+```
+
+### Script automatizado completo
+
+```bash
+#!/bin/bash
+# masscan_nmap_combo.sh — Flujo automatizado Masscan + Nmap
+# Uso: sudo ./masscan_nmap_combo.sh <rango_cidr> [velocidad]
+# Ejemplo: sudo ./masscan_nmap_combo.sh 10.10.10.0/24 5000
+
+TARGET=$1
+RATE=${2:-5000}
+TIMESTAMP=$(date +%Y%m%d_%H%M)
+OUTDIR="./recon_${TIMESTAMP}"
+mkdir -p "$OUTDIR"
+
+if [ -z "$TARGET" ]; then
+    echo "[-] Uso: $0 <rango_cidr> [rate]"
+    exit 1
+fi
+
+echo "╔══════════════════════════════════════════╗"
+echo "  Masscan + Nmap combo scan"
+echo "  Objetivo: $TARGET"
+echo "  Rate: $RATE pps"
+echo "╚══════════════════════════════════════════╝"
+
+# ── FASE 1: MASSCAN RÁPIDO ────────────────────────────────────────────
+echo ""
+echo "[1/4] Masscan — todos los puertos..."
+sudo masscan "$TARGET" \
+    -p0-65535 \
+    --rate="$RATE" \
+    --retries=2 \
+    --wait=10 \
+    -oG "$OUTDIR/masscan.gnmap" 2>/dev/null
+
+# Extraer puertos abiertos del formato grepeable
+grep "open" "$OUTDIR/masscan.gnmap" > "$OUTDIR/masscan_open.txt"
+TOTAL_OPEN=$(wc -l < "$OUTDIR/masscan_open.txt")
+echo "  Puertos abiertos encontrados: $TOTAL_OPEN"
+
+# ── FASE 2: PROCESAR RESULTADOS ──────────────────────────────────────
+echo ""
+echo "[2/4] Procesando y agrupando resultados..."
+
+# Agrupar puertos por IP usando awk
+awk '{
+    # Extraer IP del campo Host:
+    for(i=1;i<=NF;i++){
+        if($i ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/){
+            ip=$i
+        }
+    }
+    # Extraer puerto del campo Ports:
+    match($0, /([0-9]+)\/open/, arr)
+    if(ip && arr[1]){
+        if(!(ip in ports)) ports[ip]=""
+        ports[ip] = ports[ip] (ports[ip]?",":"") arr[1]
+    }
+}
+END {
+    for(ip in ports) print ip"\t"ports[ip]
+}' "$OUTDIR/masscan_open.txt" | sort -t. -k1,1n -k2,2n -k3,3n -k4,4n \
+> "$OUTDIR/hosts_with_ports.txt"
+
+# Guardar lista de IPs activas
+awk '{print $1}' "$OUTDIR/hosts_with_ports.txt" | sort -u > "$OUTDIR/alive_ips.txt"
+ALIVE=$(wc -l < "$OUTDIR/alive_ips.txt")
+echo "  Hosts activos únicos: $ALIVE"
+
+# ── FASE 3: NMAP DETALLADO ────────────────────────────────────────────
+echo ""
+echo "[3/4] Nmap — análisis detallado en hosts activos..."
+mkdir -p "$OUTDIR/nmap_scans"
+
+while IFS=$'\t' read -r ip ports; do
+    echo "  → Analizando $ip (puertos: $ports)"
+    sudo nmap \
+        -sCV \
+        -p "$ports" \
+        -Pn \
+        -n \
+        --open \
+        -T4 \
+        "$ip" \
+        -oA "$OUTDIR/nmap_scans/$(echo $ip | tr '.' '_')" \
+        2>/dev/null
+done < "$OUTDIR/hosts_with_ports.txt"
+
+# ── FASE 4: RESUMEN EJECUTIVO ─────────────────────────────────────────
+echo ""
+echo "[4/4] Generando resumen..."
+
+# Recopilar servicios encontrados de todos los XML de Nmap
+echo "" > "$OUTDIR/services_summary.txt"
+for xml in "$OUTDIR/nmap_scans/"*.xml; do
+    [ -f "$xml" ] || continue
+    python3 << PYEOF
+import xml.etree.ElementTree as ET
+
+tree = ET.parse("$xml")
+root = tree.getroot()
+
+for host in root.findall('host'):
+    addr = host.find('address')
+    if addr is None:
+        continue
+    ip = addr.get('addr', '')
+    for port in host.findall('.//port'):
+        state = port.find('state')
+        if state is None or state.get('state') != 'open':
+            continue
+        portid = port.get('portid', '')
+        proto  = port.get('protocol', 'tcp')
+        service = port.find('service')
+        svc_name = service.get('name', '?') if service is not None else '?'
+        svc_prod = service.get('product', '') if service is not None else ''
+        svc_ver  = service.get('version', '') if service is not None else ''
+        print(f"{ip}\t{portid}/{proto}\t{svc_name}\t{svc_prod} {svc_ver}".strip())
+PYEOF
+done | sort -t$'\t' -k1,1 >> "$OUTDIR/services_summary.txt"
+
+echo ""
+echo "╔══════════════════════════════════════════╗"
+echo "  ESCANEO COMPLETADO"
+echo "╠══════════════════════════════════════════╣"
+printf "  %-28s %s\n" "Hosts activos:" "$ALIVE"
+printf "  %-28s %s\n" "Puertos abiertos totales:" "$TOTAL_OPEN"
+printf "  %-28s %s\n" "Scans Nmap generados:" "$(ls $OUTDIR/nmap_scans/*.xml 2>/dev/null | wc -l)"
+echo "╠══════════════════════════════════════════╣"
+echo "  Resultados: $OUTDIR/"
+echo "╚══════════════════════════════════════════╝"
+
+echo ""
+echo "[*] Puertos más comunes encontrados:"
+awk -F'\t' '{print $2}' "$OUTDIR/hosts_with_ports.txt" \
+    | tr ',' '\n' \
+    | sort | uniq -c | sort -rn | head -15 \
+    | awk '{printf "    %5d  puerto %s\n", $1, $2}'
+```
+
+---
+
+## 7. Técnicas avanzadas
+
+### Detección de hosts activos sin escanear puertos
+
+A veces lo único que necesitas es saber qué IPs están activas en una red, sin importar qué puertos tienen abiertos:
+
+```bash
+# Enviar solo pings ICMP para descubrir hosts activos
+# Mucho más rápido que escanear puertos
+sudo masscan 10.0.0.0/16 --ping --rate=10000 -oG hosts_activos.txt
+
+# Combinar ICMP ping con escaneo del puerto 80 para mayor cobertura
+# (algunos hosts bloquean ICMP pero tienen HTTP abierto)
+sudo masscan 10.0.0.0/16 --ping -p80 --rate=10000 -oG hosts_activos.txt
+```
+
+### Escaneo UDP con Masscan
+
+El escaneo UDP es más lento que TCP pero puede revelar servicios que no aparecen en TCP. Masscan también soporta UDP:
+
+```bash
+# Escanear puertos UDP importantes
+# DNS (53), DHCP (67/68), SNMP (161), TFTP (69), NTP (123), Syslog (514)
+sudo masscan 10.0.0.0/24 \
+    -pU:53,U:67,U:68,U:69,U:123,U:161,U:162,U:500,U:514,U:1194 \
+    --rate=1000
+
+# SNMP expuesto es especialmente valioso — revela mucha información
+sudo masscan 10.0.0.0/8 -pU:161 --rate=5000 -oG snmp_hosts.txt
+```
+
+### Banners rápidos con Masscan
+
+Masscan puede capturar banners básicos de algunos servicios, aunque Nmap es más completo para esto:
+
+```bash
+# Capturar el banner del servicio (para HTTP, FTP, SSH, etc.)
+sudo masscan 10.0.0.0/24 -p80,22,21 \
+    --banners \
+    --rate=1000 \
+    -oJ resultados_con_banners.json
+
+# El JSON incluirá el banner recibido de cada servicio
+cat resultados_con_banners.json | python3 -c "
+import json, sys
+for host in json.load(sys.stdin):
+    ip = host['ip']
+    for port in host.get('ports', []):
+        p = port['port']
+        banner = port.get('banner', '')
+        if banner:
+            print(f'{ip}:{p} → {banner[:100]}')
+"
+```
+
+---
+
+## 8. Masscan en engagements reales
+
+### Reconocimiento de superficie de ataque externa
+
+Cuando el engagement incluye "toda la infraestructura de internet de la empresa", el proceso empieza por obtener los rangos de IPs del objetivo y luego escanearlos con Masscan:
+
+```bash
+# 1. Obtener los rangos de IPs de la empresa (desde WHOIS y Shodan)
+# Por ejemplo, si encontraste que usan el rango 93.184.216.0/24:
+
+# 2. Escanear la superficie externa completa
+sudo masscan 93.184.216.0/24 \
+    -p0-65535 \
+    --rate=5000 \
+    --retries=2 \
+    --excludefile exclusiones.txt \
+    -oX superficie_externa.xml
+
+# 3. Filtrar los servicios más interesantes
+# Puertos que siempre merece la pena revisar manualmente:
+grep -E "portid=\"(21|22|23|25|80|443|445|3389|5900|8080|8443|27017|6379|9200)\"" \
+    superficie_externa.xml
+```
+
+### Monitoring de cambios en la superficie de ataque
+
+Una técnica útil tanto en Red Team (para monitorizar el objetivo) como en Blue Team (para monitorizar la propia infraestructura) es ejecutar Masscan periódicamente y comparar los resultados:
+
+```bash
+#!/bin/bash
+# surface_monitor.sh — Detecta cambios en la superficie de ataque
+# Ejecutar periódicamente con cron
+
+TARGET="93.184.216.0/24"
+SCAN_DIR="./surface_history"
+TODAY=$(date +%Y%m%d)
+YESTERDAY=$(date -d "yesterday" +%Y%m%d 2>/dev/null || date -v-1d +%Y%m%d)
+
+mkdir -p "$SCAN_DIR"
+
+# Escaneo de hoy
+sudo masscan "$TARGET" -p0-65535 --rate=5000 -oG "$SCAN_DIR/${TODAY}.gnmap" 2>/dev/null
+
+# Extraer puertos abiertos ordenados
+grep "open" "$SCAN_DIR/${TODAY}.gnmap" \
+    | awk '{print $2"/"$5}' \
+    | sed 's|/open.*||' \
+    | sort > "$SCAN_DIR/${TODAY}_ports.txt"
+
+# Comparar con el día anterior si existe
+if [ -f "$SCAN_DIR/${YESTERDAY}_ports.txt" ]; then
+    echo "=== NUEVOS PUERTOS ABIERTOS (no estaban ayer) ==="
+    diff "$SCAN_DIR/${YESTERDAY}_ports.txt" "$SCAN_DIR/${TODAY}_ports.txt" \
+        | grep "^>" | sed 's/^> /  /'
+
+    echo ""
+    echo "=== PUERTOS CERRADOS (estaban ayer, ya no) ==="
+    diff "$SCAN_DIR/${YESTERDAY}_ports.txt" "$SCAN_DIR/${TODAY}_ports.txt" \
+        | grep "^<" | sed 's/^< /  /'
+fi
+```
+
+---
+
+## 9. Cheatsheet de referencia rápida
+
+```bash
+# ── INSTALACIÓN ───────────────────────────────────────────────────────────
+sudo apt install masscan
+# o compilar: git clone https://github.com/robertdavidgraham/masscan && cd masscan && make
+
+# ── USO BÁSICO ────────────────────────────────────────────────────────────
+sudo masscan IP -p80                               # Un puerto
+sudo masscan IP -p80,443,22                        # Varios puertos
+sudo masscan IP -p1-1024                           # Rango de puertos
+sudo masscan IP -p0-65535 --rate=5000              # Todos los puertos
+sudo masscan CIDR -p80,443 --rate=10000            # Subred completa
+sudo masscan -iL ips.txt -p80 --rate=5000          # Desde archivo
+
+# ── VELOCIDADES RECOMENDADAS ──────────────────────────────────────────────
+--rate=500      # Conservador — laboratorio, redes frágiles
+--rate=5000     # Estándar — engagements autorizados
+--rate=50000    # Rápido — redes grandes, hardware potente
+--rate=1000000  # Máximo — solo para redes propias controladas
+
+# ── OUTPUT ────────────────────────────────────────────────────────────────
+-oT resultado.txt    # Texto
+-oX resultado.xml    # XML (compatible con Nmap)
+-oJ resultado.json   # JSON
+-oG resultado.gnmap  # Grepeable (mejor para scripting)
+-oB resultado.bin    # Binario (para reanudar y convertir)
+
+# ── OPCIONES ÚTILES ───────────────────────────────────────────────────────
+--retries=2                # Reintentar paquetes sin respuesta
+--wait=15                  # Esperar 15s al final para respuestas lentas
+--banners                  # Capturar banners de servicios
+--excludefile excl.txt     # Excluir IPs/rangos del escaneo
+--resume-filename prog.conf # Guardar progreso para reanudar
+--resume prog.conf          # Reanudar escaneo interrumpido
+-e eth0                    # Usar interfaz de red específica
+--ping                     # Solo descubrir hosts (sin escanear puertos)
+
+# ── FLUJO MASSCAN + NMAP ──────────────────────────────────────────────────
+# 1. Masscan rápido para descubrir puertos
+sudo masscan 10.0.0.0/24 -p0-65535 --rate=5000 -oG masscan.gnmap
+
+# 2. Extraer IPs y puertos para Nmap
+grep "open" masscan.gnmap | awk '{print $2":"$5}' | sed 's|/open.*||'
+
+# 3. Nmap detallado en puertos descubiertos
+sudo nmap -sCV -p80,443,22 10.10.10.1 -oA nmap_detallado
+
+# ── RECURSOS ──────────────────────────────────────────────────────────────
+https://github.com/robertdavidgraham/masscan    → Repositorio oficial
+https://github.com/robertdavidgraham/masscan/blob/master/doc/masscan.md → Documentación
+man masscan                                     → Manual del sistema
+```
