@@ -2,7 +2,7 @@
 layout: post
 title: "Gobuster y Feroxbuster — Fuzzing de Directorios y Archivos"
 date: 2026-05-26
-categories: [enumeración]
+categories: [Escaneo y enumeracion]
 tags: [gobuster, feroxbuster, fuzzing, directorios, web, enumeración, wordlists, seclists, pentesting]
 description: "Guía profesional de Gobuster y Feroxbuster: fuzzing de directorios, archivos, subdominios y parámetros web con wordlists optimizadas, técnicas de evasión y flujos reales para pentesting web."
 ---
