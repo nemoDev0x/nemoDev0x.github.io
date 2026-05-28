@@ -1,0 +1,603 @@
+---
+layout: post
+title: "Enum4linux — Enumeración SMB y Samba Completa"
+date: 2026-05-28
+categories: [Escaneo]
+tags: [enum4linux, smb, samba, windows, enumeración, usuarios, shares, rpc, netbios, pentesting]
+description: "Guía profesional de Enum4linux y Enum4linux-ng: enumeración completa de SMB/Samba, usuarios, grupos, shares, políticas de contraseñas y técnicas avanzadas para pentesting de entornos Windows y Linux."
+---
+
+## SMB como superficie de ataque prioritaria
+
+El protocolo SMB (Server Message Block) es uno de los vectores de ataque más ricos en pentesting de entornos Windows y redes corporativas. SMB gestiona el acceso a recursos compartidos en red — ficheros, impresoras, pipes nombradas — y en el proceso expone enormes cantidades de información sobre el sistema: usuarios locales, grupos, políticas de contraseñas, recursos compartidos, información del sistema operativo, y mucho más.
+
+Lo que hace SMB especialmente valioso en reconocimiento es que muchas de estas consultas funcionan de forma **anónima** — sin credenciales válidas — en configuraciones por defecto o mal configuradas. Una sesión nula (null session) contra un servidor SMB mal configurado puede devolver la lista completa de usuarios del dominio, los grupos de seguridad, y las políticas de contraseñas, todo sin autenticarse.
+
+Enum4linux es la herramienta estándar para automatizar esta enumeración. Fue escrita originalmente en Perl por Mark Lowe y envuelve varias herramientas del paquete Samba (`smbclient`, `rpcclient`, `net`) para extraer toda la información disponible en una sola pasada. Enum4linux-ng es la reescritura moderna en Python con mejor soporte de autenticación y output estructurado.
+
+---
+
+## 1. Instalación
+
+```bash
+# En Kali Linux — enum4linux viene preinstalado
+enum4linux --help
+
+# enum4linux-ng — la versión moderna recomendada
+pip3 install enum4linux-ng
+# o desde repositorio:
+git clone https://github.com/cddmp/enum4linux-ng
+cd enum4linux-ng
+pip3 install -r requirements.txt
+
+# Dependencias necesarias para enum4linux clásico
+sudo apt install samba-common-bin ldap-utils
+
+# Verificar que las herramientas base están disponibles
+which smbclient rpcclient net nmblookup
+```
+
+---
+
+## 2. Conceptos previos — SMB, RPC y sesiones nulas
+
+Antes de lanzar herramientas, conviene entender qué protocolos usa Enum4linux internamente y por qué funcionan como funcionan.
+
+### Sesión nula — el acceso anónimo a SMB
+
+Una sesión nula es una conexión SMB autenticada con credenciales vacías: nombre de usuario en blanco y contraseña en blanco. En versiones antiguas de Windows y en configuraciones de Samba por defecto o mal configuradas, esta sesión se acepta y permite consultar información del sistema a través de pipes nombradas como `IPC$`.
+
+```bash
+# Verificar si el servidor acepta sesiones nulas
+smbclient -L //10.10.10.10 -N
+# -L → listar recursos compartidos
+# -N → sin contraseña (sesión nula)
+
+# Si devuelve la lista de shares → sesiones nulas habilitadas
+# Si devuelve "NT_STATUS_ACCESS_DENIED" → sesiones nulas bloqueadas
+
+# También con rpcclient
+rpcclient -U "" -N 10.10.10.10
+# Si abre el prompt rpcclient> → sesión nula aceptada
+```
+
+### RPC — Remote Procedure Call
+
+RPCClient es el cliente del protocolo RPC de Microsoft que permite consultar información del dominio y del sistema. Enum4linux usa rpcclient internamente para extraer usuarios, grupos y políticas. Entender los comandos de rpcclient permite hacer consultas manuales más específicas cuando necesitas algo concreto:
+
+```bash
+# Conectarse manualmente con rpcclient
+rpcclient -U "" -N 10.10.10.10          # Sesión nula
+rpcclient -U "usuario%contraseña" 10.10.10.10  # Con credenciales
+
+# Comandos principales de rpcclient una vez dentro:
+rpcclient $> srvinfo          # Información del servidor
+rpcclient $> enumdomusers     # Listar usuarios del dominio
+rpcclient $> enumdomgroups    # Listar grupos del dominio
+rpcclient $> enumdomains      # Listar dominios
+rpcclient $> querydominfo     # Información del dominio (políticas)
+rpcclient $> getdompwinfo     # Política de contraseñas
+rpcclient $> netshareenum     # Recursos compartidos
+rpcclient $> lsaquery         # Información LSA
+rpcclient $> lookupnames guest administrator  # Resolver nombres a SIDs
+rpcclient $> lookupsids S-1-5-21-...  # Resolver SID a nombre
+
+# Enumerar usuarios y extraer sus RIDs (Resource IDs)
+rpcclient $> enumdomusers
+# Output: user:[Administrator] rid:[0x1f4]
+#         user:[Guest] rid:[0x1f5]
+#         user:[john] rid:[0x44f]
+
+# Obtener información detallada de un usuario por su RID
+rpcclient $> queryuser 0x44f
+# Devuelve: nombre completo, descripción, fecha de último login,
+# fecha de último cambio de contraseña, flags de cuenta, etc.
+```
+
+---
+
+## 3. Enum4linux — uso básico y completo
+
+### Escaneo completo con una línea
+
+```bash
+# Escaneo completo contra un objetivo
+# -a → ejecutar todas las comprobaciones disponibles
+enum4linux -a 10.10.10.10
+
+# Con credenciales (cuando las sesiones nulas están bloqueadas)
+enum4linux -a -u "usuario" -p "contraseña" 10.10.10.10
+
+# Guardar output para análisis posterior
+enum4linux -a 10.10.10.10 2>/dev/null | tee enum4linux_output.txt
+
+# Modo verbose para ver qué está haciendo
+enum4linux -v -a 10.10.10.10
+```
+
+### Qué comprueba el flag -a
+
+El flag `-a` activa todas las comprobaciones disponibles. Internamente enum4linux ejecuta estas fases en orden:
+
+```
+Fase 1: Información NetBIOS
+→ Nombre del equipo, grupo de trabajo, MAC address
+→ Usa nmblookup
+
+Fase 2: Información del servidor
+→ Sistema operativo, versión de SMB, dominio
+→ Usa rpcclient srvinfo
+
+Fase 3: Enumeración de shares (recursos compartidos)
+→ Lista de todos los shares accesibles
+→ Intenta acceso anónimo a cada share
+→ Usa smbclient
+
+Fase 4: Enumeración de usuarios vía RPC
+→ Lista de usuarios locales o del dominio con sus RIDs
+→ Usa rpcclient enumdomusers
+
+Fase 5: Enumeración de usuarios vía RID cycling
+→ Prueba RIDs del 500 al 550 y del 1000 al 1050 buscando nombres
+→ Más lento pero más completo
+→ Usa rpcclient lookupnames/lookupsids
+
+Fase 6: Enumeración de grupos
+→ Grupos locales y del dominio
+→ Usa rpcclient enumdomgroups, enumalsgroups
+
+Fase 7: Información del dominio
+→ Nombre del dominio, SID del dominio, políticas
+→ Usa rpcclient querydominfo
+
+Fase 8: Política de contraseñas
+→ Longitud mínima, complejidad, lockout, historial
+→ Usa rpcclient getdompwinfo / polenum
+```
+
+### Ejecutar comprobaciones individuales
+
+Cuando solo necesitas información específica, puedes activar solo las comprobaciones relevantes:
+
+```bash
+# Solo información del sistema operativo y servidor
+enum4linux -o 10.10.10.10
+
+# Solo recursos compartidos (shares)
+enum4linux -S 10.10.10.10
+
+# Solo usuarios
+enum4linux -U 10.10.10.10
+
+# Solo grupos
+enum4linux -G 10.10.10.10
+
+# Solo política de contraseñas — crítico antes de fuerza bruta
+# para saber cuántos intentos falidos bloquean la cuenta
+enum4linux -P 10.10.10.10
+
+# Solo información de dominio y membresía
+enum4linux -r 10.10.10.10   # RID cycling para usuarios
+enum4linux -d 10.10.10.10   # Información de dominio
+
+# Especificar rango de RIDs para el cycling
+enum4linux -r -R 500-1200 10.10.10.10
+```
+
+---
+
+## 4. Enum4linux-ng — la versión moderna
+
+Enum4linux-ng es la reescritura moderna de enum4linux en Python 3 por Marc Hauer. Tiene mejor manejo de errores, soporte para más versiones de SMB, output en JSON/YAML para procesamiento automático, y mejor soporte de autenticación NTLM.
+
+```bash
+# Instalación
+pip3 install enum4linux-ng
+# o
+git clone https://github.com/cddmp/enum4linux-ng && cd enum4linux-ng
+pip3 install -r requirements.txt
+
+# Escaneo completo
+python3 enum4linux-ng.py 10.10.10.10
+
+# Con credenciales
+python3 enum4linux-ng.py -u usuario -p contraseña 10.10.10.10
+
+# Output en JSON — perfecto para procesamiento automático con jq o Python
+python3 enum4linux-ng.py -oJ resultados.json 10.10.10.10
+
+# Output en YAML
+python3 enum4linux-ng.py -oY resultados.yaml 10.10.10.10
+
+# Ambos formatos a la vez
+python3 enum4linux-ng.py -oA resultados 10.10.10.10
+# Genera: resultados.json y resultados.yaml
+
+# Activar todas las comprobaciones
+python3 enum4linux-ng.py -A 10.10.10.10
+
+# Comprobaciones específicas
+python3 enum4linux-ng.py -As 10.10.10.10  # Solo shares
+python3 enum4linux-ng.py -Au 10.10.10.10  # Solo usuarios
+python3 enum4linux-ng.py -Ag 10.10.10.10  # Solo grupos
+```
+
+### Procesar el output JSON de enum4linux-ng
+
+```python
+#!/usr/bin/env python3
+"""
+Procesa el output JSON de enum4linux-ng y extrae información relevante.
+"""
+
+import json
+import sys
+
+def parse_enum4linux_ng(json_file):
+    with open(json_file) as f:
+        data = json.load(f)
+
+    print("=" * 55)
+    print("  RESUMEN ENUM4LINUX-NG")
+    print("=" * 55)
+
+    # Información del sistema
+    sys_info = data.get("target", {})
+    os_info  = data.get("smb", {}).get("os_info", {})
+    print(f"\n[+] HOST: {sys_info.get('host')}")
+    print(f"    OS:     {os_info.get('os', 'Desconocido')}")
+    print(f"    Dominio:{os_info.get('domain', 'Desconocido')}")
+
+    # Sesión nula
+    null_sess = data.get("smb", {}).get("null_session_possible", False)
+    print(f"\n[+] Sesión nula: {'SÍ — información disponible sin credenciales' if null_sess else 'NO — requiere credenciales'}")
+
+    # Shares
+    shares = data.get("shares", {})
+    if shares:
+        print(f"\n[+] SHARES ({len(shares)}):")
+        for name, info in shares.items():
+            access = info.get("access", "?")
+            comment = info.get("comment", "")
+            print(f"    {name:<20} [{access}]  {comment}")
+
+    # Usuarios
+    users = data.get("users", {})
+    if users:
+        print(f"\n[+] USUARIOS ({len(users)}):")
+        for rid, user in users.items():
+            name  = user.get("username", "?")
+            fname = user.get("full_name", "")
+            desc  = user.get("description", "")
+            print(f"    RID {rid:>6}: {name:<25} {fname}  {desc}")
+
+    # Grupos
+    groups = data.get("groups", {})
+    if groups.get("domain"):
+        print(f"\n[+] GRUPOS DE DOMINIO ({len(groups['domain'])}):")
+        for rid, group in groups["domain"].items():
+            print(f"    RID {rid:>6}: {group.get('groupname','?')}")
+
+    # Política de contraseñas — crítico para planificar ataques
+    pw_policy = data.get("password_policy", {})
+    if pw_policy:
+        print(f"\n[!] POLÍTICA DE CONTRASEÑAS:")
+        print(f"    Longitud mínima:     {pw_policy.get('min_password_length', '?')}")
+        print(f"    Historial:           {pw_policy.get('password_history_length', '?')}")
+        print(f"    Lockout threshold:   {pw_policy.get('lockout_threshold', '?')}")
+        print(f"    Duración lockout:    {pw_policy.get('lockout_duration', '?')}")
+        lockout = pw_policy.get('lockout_threshold', 0)
+        if lockout == 0:
+            print(f"\n    [!] SIN LOCKOUT — fuerza bruta de contraseñas es segura")
+        else:
+            print(f"\n    [!] LOCKOUT a los {lockout} intentos — usar password spraying")
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Uso: python3 parse_enum4linux.py resultados.json")
+        sys.exit(1)
+    parse_enum4linux_ng(sys.argv[1])
+```
+
+---
+
+## 5. Enumeración manual de SMB con smbclient
+
+Cuando Enum4linux no da suficientes detalles o cuando quieres inspeccionar shares específicos, smbclient permite la interacción directa:
+
+```bash
+# Listar todos los shares disponibles — sesión nula
+smbclient -L //10.10.10.10 -N
+
+# Listar shares con credenciales
+smbclient -L //10.10.10.10 -U "usuario%contraseña"
+
+# Conectarse a un share específico
+smbclient //10.10.10.10/SYSVOL -N
+smbclient //10.10.10.10/NETLOGON -N
+smbclient //10.10.10.10/Users -U "usuario%contraseña"
+
+# Comandos una vez dentro del share:
+smb: \> ls                    # Listar contenido
+smb: \> cd Directorio         # Cambiar directorio
+smb: \> get fichero.txt       # Descargar un fichero
+smb: \> mget *.txt            # Descargar múltiples ficheros
+smb: \> put fichero.txt       # Subir un fichero
+smb: \> recurse ON            # Activar modo recursivo
+smb: \> prompt OFF            # No pedir confirmación
+smb: \> mget *                # Descargar todo recursivamente
+
+# Descargar todo el contenido de un share en una línea
+# Útil cuando hay muchos ficheros y no quieres entrar manualmente
+smbclient //10.10.10.10/Backup -N -c 'recurse;prompt;mget *'
+
+# Montar un share como unidad de red (requiere root)
+sudo mount -t cifs //10.10.10.10/Backup /mnt/smb -o username=,password=
+# Con credenciales:
+sudo mount -t cifs //10.10.10.10/Backup /mnt/smb -o username=usuario,password=contraseña
+
+# Ver el contenido montado como si fuera local
+ls -la /mnt/smb/
+find /mnt/smb/ -name "*.txt" -o -name "*.conf" -o -name "*.ini" 2>/dev/null
+```
+
+### Buscar contenido sensible en shares
+
+Una vez tienes acceso a un share, estos patrones de búsqueda encuentran los ficheros más valiosos:
+
+```bash
+# Buscar credenciales y contraseñas
+find /mnt/smb/ -type f \( -name "*.txt" -o -name "*.conf" -o -name "*.ini" \
+    -o -name "*.xml" -o -name "*.ps1" -o -name "*.bat" -o -name "*.vbs" \) \
+    2>/dev/null | xargs grep -li "password\|passwd\|contraseña\|secret\|credential" 2>/dev/null
+
+# Buscar ficheros con nombres que sugieren credenciales
+find /mnt/smb/ -type f \( -iname "*password*" -o -iname "*credential*" \
+    -o -iname "*secret*" -o -iname "*cred*" -o -iname "*.key" \) 2>/dev/null
+
+# Scripts de PowerShell y Batch con credenciales hardcodeadas
+find /mnt/smb/ -name "*.ps1" -o -name "*.bat" | xargs grep -l "password\|-Pass\|-Credential" 2>/dev/null
+
+# Ficheros de configuración con credenciales de base de datos
+find /mnt/smb/ -name "web.config" -o -name "appsettings.json" \
+    -o -name "*.config" | head -20
+```
+
+---
+
+## 6. CrackMapExec — enumeración SMB a escala
+
+CrackMapExec (CME) es la herramienta más completa para trabajar con SMB en redes corporativas. Permite hacer todo lo que hace Enum4linux pero a escala en múltiples hosts, y además ejecutar comandos, volcar hashes, y muchas más operaciones:
+
+```bash
+# Instalar
+pip3 install crackmapexec
+# o en Kali:
+sudo apt install crackmapexec
+
+# Enumeración básica de una red completa
+crackmapexec smb 10.10.10.0/24
+
+# Esto devuelve para cada host:
+# IP, nombre, dominio, OS, SMB signing (firmado o no)
+# SMB signing: False → vulnerable a ataques de relay
+
+# Listar shares de todos los hosts de una red
+crackmapexec smb 10.10.10.0/24 --shares -u "" -p ""
+
+# Con credenciales válidas
+crackmapexec smb 10.10.10.0/24 --shares -u usuario -p contraseña
+
+# Enumerar usuarios
+crackmapexec smb 10.10.10.10 --users -u usuario -p contraseña
+
+# Enumerar grupos
+crackmapexec smb 10.10.10.10 --groups -u usuario -p contraseña
+
+# Enumerar sesiones activas (quién está conectado)
+crackmapexec smb 10.10.10.10 --sessions -u usuario -p contraseña
+
+# Política de contraseñas
+crackmapexec smb 10.10.10.10 --pass-pol -u "" -p ""
+
+# Verificar si unas credenciales son válidas en toda la red
+# CME marca con [+] las válidas y [-] las incorrectas
+crackmapexec smb 10.10.10.0/24 -u usuario -p contraseña
+
+# Password spraying — probar una contraseña en muchos usuarios
+# --continue-on-success → no parar al primer éxito
+crackmapexec smb 10.10.10.10 -u usuarios.txt -p "Winter2024!" --continue-on-success
+
+# Pass-the-Hash — autenticarse con hash NTLM en lugar de contraseña
+crackmapexec smb 10.10.10.0/24 -u Administrator -H "aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0"
+
+# Ejecutar comandos en hosts donde las credenciales son válidas
+crackmapexec smb 10.10.10.10 -u usuario -p contraseña -x "whoami"
+crackmapexec smb 10.10.10.10 -u usuario -p contraseña -X "Get-Process" # PowerShell
+```
+
+---
+
+## 7. Nmap NSE scripts para SMB
+
+Los scripts NSE de Nmap complementan Enum4linux con verificaciones de vulnerabilidades específicas:
+
+```bash
+# Enumeración completa de SMB con scripts NSE
+nmap -p 445 --script smb-enum-shares,smb-enum-users,smb-enum-groups,\
+smb-os-discovery,smb-security-mode,smb-system-info 10.10.10.10
+
+# Detectar vulnerabilidades críticas de SMB
+# EternalBlue (MS17-010) — WannaCry, NotPetya
+nmap -p 445 --script smb-vuln-ms17-010 10.10.10.10
+
+# MS08-067 — vulnerabilidad clásica de Windows XP/2003
+nmap -p 445 --script smb-vuln-ms08-067 10.10.10.10
+
+# Verificar si SMB signing está habilitado
+# Sin signing → vulnerable a NTLM relay attacks
+nmap -p 445 --script smb-security-mode 10.10.10.10
+# smb-security-mode:
+#   message_signing: disabled  ← VULNERABLE a relay
+
+# Todas las vulnerabilidades SMB conocidas de una vez
+nmap -p 445 --script "smb-vuln-*" 10.10.10.10
+
+# Fuerza bruta de credenciales SMB
+nmap -p 445 --script smb-brute 10.10.10.10
+
+# Scripts SMB completos con credenciales
+nmap -p 445 --script smb-enum-shares \
+    --script-args smbuser=usuario,smbpass=contraseña 10.10.10.10
+```
+
+---
+
+## 8. Flujo completo de enumeración SMB
+
+```bash
+#!/bin/bash
+# smb_enum.sh — Enumeración SMB completa
+# Uso: ./smb_enum.sh <IP> [usuario] [contraseña]
+
+TARGET=$1
+USER=${2:-""}
+PASS=${3:-""}
+OUTDIR="./smb_enum_${TARGET//\./_}"
+mkdir -p "$OUTDIR"
+
+echo "╔══════════════════════════════════════════╗"
+echo "  Enumeración SMB: $TARGET"
+echo "╚══════════════════════════════════════════╝"
+
+# ── FASE 1: DETECCIÓN Y VERSIÓN ───────────────────────────────────────
+echo ""
+echo "[1/5] Detectando versión SMB y configuración..."
+nmap -p 445,139 -sV --script smb-os-discovery,smb-security-mode \
+    "$TARGET" -oN "$OUTDIR/01_nmap_smb.txt" 2>/dev/null
+
+# Extraer si SMB signing está habilitado
+SIGNING=$(grep "message_signing" "$OUTDIR/01_nmap_smb.txt" | head -1)
+echo "  SMB Signing: $SIGNING"
+
+# ── FASE 2: SESIÓN NULA ───────────────────────────────────────────────
+echo ""
+echo "[2/5] Probando sesión nula..."
+NULL_TEST=$(smbclient -L //$TARGET -N 2>&1)
+if echo "$NULL_TEST" | grep -q "Sharename"; then
+    echo "  [!] SESIÓN NULA HABILITADA"
+    echo "$NULL_TEST" > "$OUTDIR/02_null_session_shares.txt"
+else
+    echo "  [-] Sesión nula bloqueada"
+fi
+
+# ── FASE 3: ENUM4LINUX ────────────────────────────────────────────────
+echo ""
+echo "[3/5] Enum4linux — enumeración completa..."
+if [ -n "$USER" ]; then
+    enum4linux -a -u "$USER" -p "$PASS" "$TARGET" > "$OUTDIR/03_enum4linux.txt" 2>/dev/null
+else
+    enum4linux -a "$TARGET" > "$OUTDIR/03_enum4linux.txt" 2>/dev/null
+fi
+
+# Extraer usuarios del output
+echo "  Usuarios encontrados:"
+grep "user:" "$OUTDIR/03_enum4linux.txt" | awk -F'\\[' '{print "  "$2}' | tr -d ']' | sort -u | tee "$OUTDIR/usuarios.txt"
+
+# Extraer política de contraseñas
+echo ""
+echo "  Política de contraseñas:"
+grep -A 10 "Password Info" "$OUTDIR/03_enum4linux.txt" | head -15
+
+# ── FASE 4: VULNERABILIDADES SMB ─────────────────────────────────────
+echo ""
+echo "[4/5] Verificando vulnerabilidades SMB conocidas..."
+nmap -p 445 --script "smb-vuln-*" "$TARGET" \
+    -oN "$OUTDIR/04_smb_vulns.txt" 2>/dev/null
+
+# Mostrar solo vulns encontradas
+grep -A 3 "VULNERABLE" "$OUTDIR/04_smb_vulns.txt" | grep -v "^--$"
+
+# ── FASE 5: EXPLORAR SHARES ───────────────────────────────────────────
+echo ""
+echo "[5/5] Explorando shares accesibles..."
+# Obtener lista de shares
+SHARES=$(smbclient -L //$TARGET -N 2>/dev/null | grep "Disk" | awk '{print $1}')
+
+for share in $SHARES; do
+    echo "  Probando share: $share"
+    # Intentar listar el contenido del share
+    smbclient //$TARGET/$share -N -c "ls" 2>/dev/null | head -20 \
+        >> "$OUTDIR/05_shares_content.txt"
+done
+
+# ── RESUMEN ───────────────────────────────────────────────────────────
+echo ""
+echo "╔══════════════════════════════════════════╗"
+echo "  ENUMERACIÓN COMPLETADA"
+echo "╠══════════════════════════════════════════╣"
+printf "  %-28s %s\n" "Usuarios:" "$(wc -l < $OUTDIR/usuarios.txt 2>/dev/null || echo 0)"
+printf "  %-28s %s\n" "Shares encontrados:" "$(echo $SHARES | wc -w)"
+printf "  %-28s %s\n" "Vulns SMB:" "$(grep -c VULNERABLE $OUTDIR/04_smb_vulns.txt 2>/dev/null || echo 0)"
+echo "╠══════════════════════════════════════════╣"
+echo "  Resultados en: $OUTDIR/"
+echo "╚══════════════════════════════════════════╝"
+```
+
+---
+
+## 9. Cheatsheet de referencia rápida
+
+```bash
+# ── ENUM4LINUX ────────────────────────────────────────────────────────────
+enum4linux -a 10.10.10.10                           # Todo (anónimo)
+enum4linux -a -u user -p pass 10.10.10.10           # Todo (con creds)
+enum4linux -U 10.10.10.10                           # Solo usuarios
+enum4linux -S 10.10.10.10                           # Solo shares
+enum4linux -G 10.10.10.10                           # Solo grupos
+enum4linux -P 10.10.10.10                           # Solo política contraseñas
+enum4linux -r -R 500-1200 10.10.10.10              # RID cycling amplio
+
+# ── ENUM4LINUX-NG ─────────────────────────────────────────────────────────
+python3 enum4linux-ng.py -A 10.10.10.10             # Todo
+python3 enum4linux-ng.py -oJ out.json 10.10.10.10  # Output JSON
+python3 enum4linux-ng.py -u user -p pass 10.10.10.10
+
+# ── RPCCLIENT MANUAL ──────────────────────────────────────────────────────
+rpcclient -U "" -N 10.10.10.10                      # Sesión nula
+rpcclient $> enumdomusers                           # Listar usuarios
+rpcclient $> enumdomgroups                          # Listar grupos
+rpcclient $> queryuser 0x1f4                        # Info de usuario por RID
+rpcclient $> getdompwinfo                           # Política de contraseñas
+rpcclient $> netshareenum                           # Shares
+
+# ── SMBCLIENT ─────────────────────────────────────────────────────────────
+smbclient -L //10.10.10.10 -N                       # Listar shares (anónimo)
+smbclient //10.10.10.10/Share -N                    # Conectar (anónimo)
+smbclient //10.10.10.10/Share -U "user%pass"        # Conectar (con creds)
+smbclient //10.10.10.10/Share -N -c 'recurse;prompt;mget *'  # Descargar todo
+
+# ── CRACKMAPEXEC ──────────────────────────────────────────────────────────
+crackmapexec smb 10.10.10.0/24                      # Descubrir hosts SMB
+crackmapexec smb 10.10.10.0/24 --shares -u "" -p "" # Shares anónimo
+crackmapexec smb 10.10.10.10 --users -u user -p pass
+crackmapexec smb 10.10.10.10 --pass-pol -u "" -p ""
+crackmapexec smb 10.10.10.0/24 -u user -p pass      # Probar creds en red
+crackmapexec smb 10.10.10.10 -u users.txt -p "Pass1!" --continue-on-success
+
+# ── NMAP NSE SMB ──────────────────────────────────────────────────────────
+nmap -p 445 --script smb-enum-shares,smb-enum-users 10.10.10.10
+nmap -p 445 --script smb-vuln-ms17-010 10.10.10.10  # EternalBlue
+nmap -p 445 --script "smb-vuln-*" 10.10.10.10       # Todas las vulns
+nmap -p 445 --script smb-security-mode 10.10.10.10  # SMB signing
+
+# ── MONTAR SHARE ──────────────────────────────────────────────────────────
+sudo mount -t cifs //10.10.10.10/Share /mnt/smb -o username=,password=
+sudo umount /mnt/smb
+
+# ── RECURSOS ──────────────────────────────────────────────────────────────
+https://github.com/CiscoCXSecurity/enum4linux       → enum4linux original
+https://github.com/cddmp/enum4linux-ng              → enum4linux-ng
+https://github.com/byt3bl33d3r/CrackMapExec         → CrackMapExec
+https://www.samba.org/samba/docs/current/man-html/rpcclient.1.html → rpcclient
+```
