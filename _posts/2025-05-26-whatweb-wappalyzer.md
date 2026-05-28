@@ -1,8 +1,8 @@
 ---
 layout: post
 title: "WhatWeb y Wappalyzer — Fingerprinting de Tecnologías Web"
-date: 2025-05-26
-categories: [enumeración]
+date: 2026-05-28
+categories: [Escaneo]
 tags: [whatweb, wappalyzer, fingerprinting, tecnologías, web, enumeración, recon, cms, frameworks]
 description: "Guía profesional de WhatWeb y Wappalyzer: identificación del stack tecnológico de aplicaciones web, versiones de software, CMS, frameworks, servidores y técnicas de fingerprinting para pentesting."
 ---
