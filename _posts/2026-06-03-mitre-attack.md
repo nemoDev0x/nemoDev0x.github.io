@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "MITRE ATT&CK — Framework de Tácticas y Técnicas Reales"
-date: 2025-05-30
+date: 2026-06-03
 categories: [vulnerabilidades]
 tags: [mitre, attack, framework, tácticas, técnicas, red-team, blue-team, threat-intelligence, ttps]
 description: "Guía profesional de MITRE ATT&CK: estructura del framework, tácticas, técnicas, sub-técnicas, grupos APT, navegación de la matriz y aplicación en Red Team, Blue Team y Threat Intelligence."
